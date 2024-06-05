@@ -46,11 +46,13 @@ def create_tables():
         # Create the 'schedules' table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS public.schedules (
-            model_id int4 NOT NULL,
-            interval_hours int4 NOT NULL,
-            last_run timestamp NULL,
-            next_run timestamp NOT NULL,
-            CONSTRAINT schedules_model_id_key UNIQUE (model_id)
+        model_id int4 NOT NULL,
+        interval_hours int4 NOT NULL,
+        last_run timestamp NULL,
+        next_run timestamp NOT NULL,
+        mb_refresh_begin timestamp NULL,
+        mb_refresh_end timestamp NULL,
+        CONSTRAINT schedules_model_id_key UNIQUE (model_id)
         )
         """)
 

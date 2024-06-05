@@ -3,10 +3,10 @@ from psycopg2 import sql
 from dotenv import load_dotenv
 import os
 
-# Load environment variables from .env file
+# Load environment vars from .env file
 load_dotenv()
 
-# Database connection details
+# DB connection details
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
@@ -15,11 +15,11 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 
 def insert_or_update_model_schedules(csv_file):
     try:
-        # Connect to the PostgreSQL database
+        # Connect to PostgreSQL
         conn = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, host=DB_HOST, port=DB_PORT)
         cursor = conn.cursor()
 
-        # Use the COPY command to load data from the CSV file into a temporary table
+        # Load data from the CSV file into temp table
         cursor.execute("""
         CREATE TEMP TABLE tmp_schedules (
             model_id int4,
@@ -30,6 +30,12 @@ def insert_or_update_model_schedules(csv_file):
         with open(csv_file, 'r') as f:
             next(f)  # Skip the header row
             cursor.copy_expert("COPY tmp_schedules FROM STDIN WITH CSV", f)
+            
+        # Remove any records not in temp table
+        cursor.execute("""
+        DELETE FROM public.schedules
+        WHERE model_id NOT IN (SELECT model_id FROM tmp_schedules)
+        """)
 
         # Insert or update data in the 'schedules' table
         cursor.execute("""
@@ -39,8 +45,10 @@ def insert_or_update_model_schedules(csv_file):
         ON CONFLICT (model_id)
         DO UPDATE SET
             interval_hours = EXCLUDED.interval_hours,
-            last_run = NULL,
-            next_run = NOW()
+            next_run = CASE
+                WHEN public.schedules.last_run IS NULL THEN NOW()
+                ELSE public.schedules.last_run + INTERVAL '1 hour' * EXCLUDED.interval_hours
+            END
         """)
 
         conn.commit()

@@ -36,7 +36,7 @@ def calculate_next_run(interval_hours):
     return next_run.isoformat()
 
 # Call model persistence endpoint
-def make_api_call(model_id):
+def refresh_model(model_id):
     url = f"{METABASE_URL}/api/card/{model_id}/refresh"
     headers = {
         "x-api-key": API_KEY,
@@ -51,7 +51,7 @@ def make_api_call(model_id):
         logging.error(f"API call failed for ID: {model_id} - {error}")
         return False
 
-# Check the current state of the refresh
+# Check refresh state in Metabase
 
 def check_refresh_state(model_id):
     url = f"{METABASE_URL}/api/persist/card/{model_id}"
@@ -63,7 +63,32 @@ def check_refresh_state(model_id):
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         result = response.json()
-        logging.info(f"Current state for ID: {model_id} - {result}")
+
+        refresh_begin = result.get("refresh_begin")
+        refresh_end = result.get("refresh_end")
+
+        if refresh_begin or refresh_end:
+            try:
+                conn = psycopg2.connect(**conn_params)
+                cur = conn.cursor()
+
+                update_query = """
+                    UPDATE public.schedules
+                    SET mb_refresh_begin = %s, mb_refresh_end = %s
+                    WHERE model_id = %s;
+                """
+                cur.execute(update_query, (refresh_begin, refresh_end, model_id))
+
+                conn.commit()
+                cur.close()
+                conn.close()
+
+                logging.info(f"Updated refresh times for Model ID: {model_id}")
+            except Exception as db_error:
+                logging.error(f"Failed to update refresh times for ID: {model_id} - {db_error}")
+        else:
+            logging.warning(f"Missing refresh times in the response for Model ID: {model_id}")
+
     except requests.RequestException as error:
         logging.error(f"Failed to get current state for ID: {model_id} - {error}")
         
@@ -87,7 +112,7 @@ def handle_scheduling():
             logging.info(f"Processing Model ID: {model_id}, Interval: {interval_hours} hours")
 
             # Make the API call
-            api_call_success = make_api_call(model_id)
+            api_call_success = refresh_model(model_id)
 
             if api_call_success:
                 # Check the current state of the refresh
